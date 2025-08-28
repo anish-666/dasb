@@ -1,7 +1,7 @@
-// api/calls-outbound.js (CJS)
+// api/calls-outbound.js
 const { sql } = require('../lib/db.js')
 const { startCall } = require('../lib/bolna.js')
-const { verifyJwtOptional } = require('../lib/auth.js') // ok if you only have verifyJwt; see note below
+const { verifyJwtOptional } = require('../lib/auth.js')
 const { randomUUID } = require('crypto')
 
 const headers = {
@@ -12,19 +12,14 @@ const headers = {
 }
 
 function getTenantFromAuth(event) {
-  // Admin override for quick testing
+  // Admin override for quick testing (use your JWT_SECRET as the admin key)
   const admin = event.headers['x-admin-key'] || event.headers['X-Admin-Key']
   if (admin && admin === (process.env.JWT_SECRET || '')) return 't_demo'
 
   const auth = event.headers.authorization || ''
   if (!auth.startsWith('Bearer ')) return null
-  try {
-    // if you only have verifyJwt(token) -> change next line to: const u = verifyJwt(token)
-    const u = verifyJwtOptional ? verifyJwtOptional(auth.slice(7)) : null
-    return u?.t || 't_demo'
-  } catch {
-    return null
-  }
+  const u = verifyJwtOptional(auth.slice(7))
+  return u?.t || 't_demo'
 }
 
 module.exports.handler = async (event) => {
@@ -51,26 +46,23 @@ module.exports.handler = async (event) => {
     const created = []
     const provider = []
 
-    // Insert each call in our DB (using your schema) and then call Bolna
     for (const raw of numbers) {
       const phone = String(raw).trim()
       const id = randomUUID()
 
-      // DB insert (your columns)
+      // insert according to your current calls schema
       await sql`
         insert into calls (id, tenant_id, agent_id, phone, direction, status, started_at)
         values (${id}, ${tenant_id}, ${agentId}, ${phone}, 'outbound', 'created', now())
       `
-
       created.push(id)
 
-      // Provider call
       try {
         const r = await startCall({ agent_id: agentId, recipient_phone_number: phone })
-        // If provider returns an id, store it
         if (r?.id) {
           await sql`
-            update calls set provider_agent_id = ${agentId}, provider_call_id = ${r.id}
+            update calls
+            set provider_agent_id = ${agentId}, provider_call_id = ${r.id}
             where id = ${id}
           `
         }
@@ -80,11 +72,7 @@ module.exports.handler = async (event) => {
       }
     }
 
-    return {
-      statusCode: 200,
-      headers,
-      body: JSON.stringify({ ok: true, created_count: created.length, created, provider })
-    }
+    return { statusCode: 200, headers, body: JSON.stringify({ ok: true, created_count: created.length, created, provider }) }
   } catch (e) {
     return { statusCode: 500, headers, body: JSON.stringify({ error: String(e?.message || e) }) }
   }
