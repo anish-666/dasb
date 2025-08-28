@@ -33,4 +33,17 @@ export default function Outbound() {
       {status && <div className="mt-2 text-sm text-green-700">{status}</div>}
     </div>
   )
+  {result && (
+  <div className="text-sm mt-2">
+    <div className="text-green-700">
+      Created {result.created_count} calls
+    </div>
+    {Array.isArray(result.provider) && result.provider.map((p, idx) => (
+      <pre key={idx} className="mt-2 bg-gray-50 p-2 rounded border overflow-x-auto">
+        {JSON.stringify(p, null, 2)}
+      </pre>
+    ))}
+  </div>
+)}
+
 }
