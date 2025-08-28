@@ -11,3 +11,5 @@ export const handler = withCors(async (event) => {
   const token = issueJwt({ email: found.email, tenant: found.tenant })
   return json(200, { token, user: { email: found.email, tenant_id: found.tenant } })
 })
+// shim so Netlify exposes /.netlify/functions/auth-login
+export { handler } from './auth/login.js'
