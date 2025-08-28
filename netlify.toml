@@ -25,7 +25,10 @@
 
 
 [functions]
+  directory = "api"
   node_bundler = "esbuild"
+  included_files = ["lib/**"]
+
 
 # If your app posts to /auth-login, route it to the function:
 [[redirects]]
