@@ -10,11 +10,16 @@ export const handler = withCors(async (event) => {
   const t = auth.data.t
 
   const sp = new URL(event.rawUrl).searchParams
-  const window = sp.get('window') === '30d' ? '30 days' : '7 days'
+  const days = sp.get('window') === '30d' ? 30 : 7
+
+  // Compute JS start date to avoid "interval $1" issues
+  const start = new Date()
+  start.setUTCHours(0, 0, 0, 0)
+  start.setUTCDate(start.getUTCDate() - days)
 
   const rows = await sql`
     with days as (
-      select generate_series(date_trunc('day', now() - interval ${sql(window)}), date_trunc('day', now()), interval '1 day') as d
+      select generate_series(date_trunc('day', ${start}), date_trunc('day', now()), interval '1 day') as d
     )
     select
       to_char(d.d, 'YYYY-MM-DD') as date,
@@ -27,10 +32,11 @@ export const handler = withCors(async (event) => {
              count(*) as cnt,
              sum(case when success then 1 else 0 end) as cn,
              avg(nullif(duration_seconds,0)) as ad
-      from calls where tenant_id=${t}
+      from calls
+      where tenant_id=${t}
       group by 1
     ) c on c.day = d.d
     order by d.d asc
   `
-  return json(200, { window, series: rows })
+  return json(200, { window: `${days}d`, series: rows })
 })
