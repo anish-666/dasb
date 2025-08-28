@@ -9,13 +9,17 @@ export const handler = withCors(async (event) => {
   if (!auth.ok) return json(401, { error: auth.err })
   const t = auth.data.t
 
-  const totals = await sql`
+  // "success": infer from status/disposition since your table doesn't have a boolean.
+  const rows = await sql/*sql*/`
     select
       count(*)::int as total_calls,
-      sum(case when success then 1 else 0 end)::int as connected,
-      coalesce(avg(nullif(duration_seconds,0)),0)::float as avg_duration
+      count(*) filter (
+        where (status in ('connected','completed','answered','success'))
+           or (disposition in ('connected','completed','answered','success'))
+      )::int as connected,
+      coalesce(avg(nullif(duration_sec,0)),0)::float as avg_duration
     from calls
-    where tenant_id=${t}
+    where tenant_id = ${t}
   `
-  return json(200, totals[0])
+  return json(200, rows[0])
 })
