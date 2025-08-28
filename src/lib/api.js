@@ -1,7 +1,12 @@
 // src/lib/api.js
-// Maps "/api/foo/bar" -> "/.netlify/functions/foo-bar" when running on Netlify,
-// otherwise leaves path alone (e.g., for local dev with netlify dev).
-const state = { base: '' }
+const state = {
+  base:
+    (import.meta.env.VITE_API_BASE ??
+      (typeof window !== 'undefined' && window.location.hostname.endsWith('netlify.app')
+        ? '/.netlify/functions'
+        : ''))
+      .replace(/\/$/, '')
+}
 
 function headers() {
   const h = { 'Content-Type': 'application/json' }
@@ -11,22 +16,19 @@ function headers() {
 }
 
 function toFnPath(path) {
-  // If VITE_API_BASE explicitly set to "/.netlify/functions", just drop the "/api/"
-  // and hyphenate the rest: /api/analytics/summary -> /analytics-summary
-  if ((state.base || '').startsWith('/.netlify/functions')) {
-    // strip any query string
+  if (state.base.startsWith('/.netlify/functions')) {
     const [p, q] = path.split('?')
     const parts = p.replace(/^\/api\//, '').split('/').filter(Boolean)
     const fn = '/' + parts.join('-') + (q ? '?' + q : '')
     return fn
   }
-  return path // normal /api/* with working redirects
+  return path
 }
 
 export const api = {
   setBase(b) { state.base = (b || '').replace(/\/$/, '') },
   async login(email, password) {
-    const url = (state.base || '').startsWith('/.netlify/functions')
+    const url = state.base.startsWith('/.netlify/functions')
       ? `${state.base}/auth-login`
       : `/api/auth/login`
     const res = await fetch(url, {
