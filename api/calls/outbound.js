@@ -3,6 +3,7 @@ import { withCors } from '../../lib/cors.js'
 import { json } from '../../lib/utils.js'
 import { sql } from '../../lib/db.js'
 import { requireAuth } from '../../lib/auth.js'
+import { randomUUID } from 'crypto'
 
 async function startProviderCall(toNumber, agentProviderId, fromNumber, webhookUrl) {
   const res = await fetch('https://api.bolna.ai/v1/calls', {
@@ -43,30 +44,32 @@ export const handler = withCors(async (event) => {
   const base = (process.env.PUBLIC_SITE_URL || '').replace(/\/$/, '')
   const webhookUrl = `${base}/.netlify/functions/webhooks-bolna`
 
-  // Detect your table shape once
+  // Detect table shape
   const cols = await sql/*sql*/`
     select column_name from information_schema.columns
     where table_schema = current_schema() and table_name = 'calls'
   `
-  const hasPhone = cols.some(r => r.column_name === 'phone')
-  const hasCustomerNumber = cols.some(r => r.column_name === 'customer_number')
-  const hasStartedAt = cols.some(r => r.column_name === 'started_at')
-  const hasDurationSec = cols.some(r => r.column_name === 'duration_sec')
-  const hasDirection = cols.some(r => r.column_name === 'direction')
-  const hasStatus = cols.some(r => r.column_name === 'status')
-  const hasDisposition = cols.some(r => r.column_name === 'disposition')
+  const hasPhone           = cols.some(r => r.column_name === 'phone')
+  const hasCustomerNumber  = cols.some(r => r.column_name === 'customer_number')
+  const hasStartedAt       = cols.some(r => r.column_name === 'started_at')
+  const hasDurationSec     = cols.some(r => r.column_name === 'duration_sec')
+  const hasDirection       = cols.some(r => r.column_name === 'direction')
+  const hasStatus          = cols.some(r => r.column_name === 'status')
+  const hasDisposition     = cols.some(r => r.column_name === 'disposition')
   const hasProviderAgentId = cols.some(r => r.column_name === 'provider_agent_id')
 
   const created = []
   const provider = []
 
   for (const num of numbers) {
+    const id = randomUUID() // ensure NOT NULL id even if DB has no default
+
     let row
     if (hasPhone) {
-      // Your schema variant
+      // Your current schema variant
       row = (await sql/*sql*/`
         insert into calls (
-          tenant_id, agent_id,
+          id, tenant_id, agent_id,
           ${hasPhone ? sql`phone,` : sql``}
           ${hasProviderAgentId ? sql`provider_agent_id,` : sql``}
           ${hasDirection ? sql`direction,` : sql``}
@@ -76,7 +79,7 @@ export const handler = withCors(async (event) => {
           ${hasDurationSec ? sql`duration_sec,` : sql``}
           provider_call_id
         ) values (
-          ${tenantId}, ${agentProviderId},
+          ${id}, ${tenantId}, ${agentProviderId},
           ${hasPhone ? sql`${num},` : sql``}
           ${hasProviderAgentId ? sql`${agentProviderId},` : sql``}
           ${hasDirection ? sql`'outbound',` : sql``}
@@ -92,9 +95,9 @@ export const handler = withCors(async (event) => {
       // Original schema variant
       row = (await sql/*sql*/`
         insert into calls (
-          tenant_id, agent_id, customer_number, success, duration_seconds, created_at
+          id, tenant_id, agent_id, customer_number, success, duration_seconds, created_at
         ) values (
-          ${tenantId}, ${agentProviderId}, ${num}, false, 0, now()
+          ${id}, ${tenantId}, ${agentProviderId}, ${num}, false, 0, now()
         )
         returning id
       `)[0]
@@ -102,8 +105,9 @@ export const handler = withCors(async (event) => {
       return json(500, { error: 'calls table missing phone/customer_number column' })
     }
 
-    created.push(row?.id || null)
+    created.push(row?.id || id)
 
+    // Fire provider call (best effort)
     const prov = await startProviderCall(num, agentProviderId, fromNumber, webhookUrl)
     provider.push({ phone: num, ...prov })
   }
