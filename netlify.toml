@@ -3,13 +3,76 @@
   publish = "dist"
   functions = "api"
 
+# --- Explicit routes for nested functions ---
+[[redirects]]
+  from = "/api/auth/login"
+  to = "/.netlify/functions/auth-login"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/agents"
+  to = "/.netlify/functions/agents-index"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/conversations"
+  to = "/.netlify/functions/conversations-index"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/conversations/transcript"
+  to = "/.netlify/functions/conversations-transcript"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/analytics/summary"
+  to = "/.netlify/functions/analytics-summary"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/analytics/timeseries"
+  to = "/.netlify/functions/analytics-timeseries"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/campaigns"
+  to = "/.netlify/functions/campaigns-index"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/calls/outbound"
+  to = "/.netlify/functions/calls-outbound"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/webhooks/bolna"
+  to = "/.netlify/functions/webhooks-bolna"
+  status = 200
+  force = true
+
+# Optional debug helper (if you added it)
+[[redirects]]
+  from = "/api/debug-users"
+  to = "/.netlify/functions/debug-users"
+  status = 200
+  force = true
+
+# --- Generic fallback for single-level functions like /api/status ---
 [[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/:splat"
   status = 200
   force = true
 
-# Single Page App fallback
+# SPA fallback
 [[redirects]]
   from = "/*"
   to = "/index.html"
