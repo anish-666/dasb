@@ -3,76 +3,17 @@
   publish = "dist"
   functions = "api"
 
-# --- Explicit routes for nested functions ---
+[functions]
+  node_bundler = "esbuild"
+
+# If your app posts to /auth-login, route it to the function:
 [[redirects]]
-  from = "/api/auth/login"
+  from = "/auth-login"
   to = "/.netlify/functions/auth-login"
   status = 200
   force = true
 
-[[redirects]]
-  from = "/api/agents"
-  to = "/.netlify/functions/agents-index"
-  status = 200
-  force = true
-
-[[redirects]]
-  from = "/api/conversations"
-  to = "/.netlify/functions/conversations-index"
-  status = 200
-  force = true
-
-[[redirects]]
-  from = "/api/conversations/transcript"
-  to = "/.netlify/functions/conversations-transcript"
-  status = 200
-  force = true
-
-[[redirects]]
-  from = "/api/analytics/summary"
-  to = "/.netlify/functions/analytics-summary"
-  status = 200
-  force = true
-
-[[redirects]]
-  from = "/api/analytics/timeseries"
-  to = "/.netlify/functions/analytics-timeseries"
-  status = 200
-  force = true
-
-[[redirects]]
-  from = "/api/campaigns"
-  to = "/.netlify/functions/campaigns-index"
-  status = 200
-  force = true
-
-[[redirects]]
-  from = "/api/calls/outbound"
-  to = "/.netlify/functions/calls-outbound"
-  status = 200
-  force = true
-
-[[redirects]]
-  from = "/api/webhooks/bolna"
-  to = "/.netlify/functions/webhooks-bolna"
-  status = 200
-  force = true
-
-# Optional debug helper (if you added it)
-[[redirects]]
-  from = "/api/debug-users"
-  to = "/.netlify/functions/debug-users"
-  status = 200
-  force = true
-  
-  [[redirects]]
-  from = "/api/auth/login"
-  to = "/.netlify/functions/auth-login"
-  status = 200
-  force = true
-
-
-# --- Generic fallback for single-level functions like /api/status ---
+# If you also use /api/* anywhere, keep this:
 [[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/:splat"
@@ -84,8 +25,3 @@
   from = "/*"
   to = "/index.html"
   status = 200
-
-  [functions]
-  node_bundler = "esbuild"
-  node_version = "18"
-
