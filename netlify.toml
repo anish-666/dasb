@@ -64,6 +64,13 @@
   to = "/.netlify/functions/debug-users"
   status = 200
   force = true
+  
+  [[redirects]]
+  from = "/api/auth/login"
+  to = "/.netlify/functions/auth-login"
+  status = 200
+  force = true
+
 
 # --- Generic fallback for single-level functions like /api/status ---
 [[redirects]]
