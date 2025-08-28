@@ -3,6 +3,27 @@
   publish = "dist"
   functions = "api"
 
+  # put these ABOVE the generic /api/* rule
+[[redirects]]
+  from = "/api/agents"
+  to = "/.netlify/functions/agents-index"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/calls/outbound"
+  to = "/.netlify/functions/calls-outbound"
+  status = 200
+  force = true
+
+# keep your generic fallback for single-level functions like /api/status
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
+  force = true
+
+
 [functions]
   node_bundler = "esbuild"
 
