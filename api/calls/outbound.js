@@ -13,36 +13,26 @@ export const handler = withCors(async (event) => {
   if (!auth.ok) return json(401, { error: auth.err })
   const tenantId = auth.data.t
 
-  let body = {}
-  try { body = JSON.parse(event.body || '{}') } catch {}
-  const numbers = Array.isArray(body.numbers) ? body.numbers.filter(Boolean) : []
+  let payload = {}; try { payload = JSON.parse(event.body || '{}') } catch {}
+  const numbers = Array.isArray(payload.numbers) ? payload.numbers.filter(Boolean) : []
   if (!numbers.length) return json(400, { error: 'no_numbers' })
 
-  const agentProviderId = body.agentId || process.env.BOLNA_AGENT_ID
+  const agentProviderId = payload.agentId || process.env.BOLNA_AGENT_ID
   if (!agentProviderId) return json(400, { error: 'missing_agent' })
-  const fromNumber = body.callerId || process.env.OUTBOUND_CALLER_ID || '' // omit if falsy
+  const fromNumber = payload.callerId || process.env.OUTBOUND_CALLER_ID || ''
 
-  // Detect calls table shape
+  // detect calls table shape
   const cols = await sql`select column_name from information_schema.columns where table_name='calls' and table_schema=current_schema()`
   const has = c => cols.some(r => r.column_name === c)
-  const hasPhone = has('phone')
-  const hasCustomer = has('customer_number')
-  const hasStartedAt = has('started_at')
-  const hasDurationSec = has('duration_sec')
-  const hasDirection = has('direction')
-  const hasStatus = has('status')
-  const hasDisposition = has('disposition')
-  const hasProvAgent = has('provider_agent_id')
-  const hasProvCall = has('provider_call_id')
-  const hasSummary = has('summary')
+  const hasPhone = has('phone'), hasCustomer = has('customer_number')
+  const hasStartedAt = has('started_at'), hasDurationSec = has('duration_sec')
+  const hasDirection = has('direction'), hasStatus = has('status')
+  const hasDisposition = has('disposition'), hasProvAgent = has('provider_agent_id')
+  const hasProvCall = has('provider_call_id'), hasSummary = has('summary')
 
-  const created = []
-  const provider = []
-
+  const created = []; const provider = []
   for (const num of numbers) {
     const id = randomUUID()
-
-    // Insert local row (queued)
     if (hasPhone) {
       await sql`
         insert into calls (
@@ -72,33 +62,29 @@ export const handler = withCors(async (event) => {
         )
       `
     } else if (hasCustomer) {
-      await sql`
-        insert into calls (id, tenant_id, agent_id, customer_number, success, duration_seconds, created_at)
-        values (${id}, ${tenantId}, ${agentProviderId}, ${num}, false, 0, now())
-      `
+      await sql`insert into calls (id, tenant_id, agent_id, customer_number, success, duration_seconds, created_at)
+                values (${id}, ${tenantId}, ${agentProviderId}, ${num}, false, 0, now())`
     } else {
       return json(500, { error: 'calls table missing phone/customer_number column' })
     }
 
-    // Provider call (Bearer)
     const prov = await startCall({ agentId: agentProviderId, to: num, from: fromNumber || undefined })
     const providerId = prov.body?.call_id || prov.body?.id || prov.body?.data?.id || null
 
-    // Save provider result
     if (hasProvCall || hasStatus || hasSummary) {
       await sql`
         update calls
         set
           ${hasProvCall ? sql`provider_call_id = ${providerId},` : sql``}
           ${hasStatus ? sql`status = ${prov.ok ? 'initiated' : 'error'},` : sql``}
-          ${hasSummary ? sql`summary = ${prov.ok ? null : JSON.stringify(prov.body).slice(0, 1000)},` : sql``}
+          ${hasSummary ? sql`summary = ${prov.ok ? null : JSON.stringify(prov).slice(0, 2000)},` : sql``}
           started_at = coalesce(started_at, now())
         where id = ${id}
       `
     }
 
     created.push(id)
-    provider.push({ phone: num, ok: prov.ok, status: prov.status, tried: prov.tried, id: providerId, body: prov.body })
+    provider.push({ phone: num, ok: prov.ok, status: prov.status, id: providerId, attempts: prov.attempts })
   }
 
   return json(200, { ok: true, created_count: created.length, created, provider })
