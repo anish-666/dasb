@@ -1,4 +1,3 @@
-// api/calls/outbound.js
 import { withCors } from '../../lib/cors.js'
 import { json } from '../../lib/utils.js'
 import { sql } from '../../lib/db.js'
@@ -6,22 +5,23 @@ import { requireAuth } from '../../lib/auth.js'
 import { randomUUID } from 'crypto'
 
 async function startProviderCall(toNumber, agentProviderId, fromNumber, webhookUrl) {
+  const body = {
+    agent_id: agentProviderId,
+    to_number: toNumber,
+    webhook_url: webhookUrl
+  }
+  if (fromNumber) body.from_number = fromNumber // only send if provided/allowed
+
   const res = await fetch('https://api.bolna.ai/v1/calls', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': process.env.BOLNA_API_KEY || ''
-    },
-    body: JSON.stringify({
-      agent_id: agentProviderId,
-      to_number: toNumber,
-      from_number: fromNumber,
-      webhook_url: webhookUrl
-    })
+    headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.BOLNA_API_KEY || '' },
+    body: JSON.stringify(body)
   })
   const txt = await res.text()
-  let body; try { body = JSON.parse(txt) } catch { body = { raw: txt } }
-  return { ok: res.ok, status: res.status, body }
+  let parsed; try { parsed = JSON.parse(txt) } catch { parsed = { raw: txt } }
+  // Try common id shapes
+  const providerId = parsed.call_id || parsed.id || parsed.data?.id || parsed.result?.id || null
+  return { ok: res.ok, status: res.status, body: parsed, providerId }
 }
 
 export const handler = withCors(async (event) => {
@@ -38,78 +38,91 @@ export const handler = withCors(async (event) => {
   if (!numbers.length) return json(400, { error: 'no_numbers' })
 
   const agentProviderId = payload.agentId || process.env.BOLNA_AGENT_ID
-  const fromNumber = payload.callerId || process.env.OUTBOUND_CALLER_ID
-  if (!agentProviderId || !fromNumber) return json(400, { error: 'missing_agent_or_caller' })
+  const fromNumber = payload.callerId || process.env.OUTBOUND_CALLER_ID || '' // may be empty => omitted
+  if (!agentProviderId) return json(400, { error: 'missing_agent' })
 
   const base = (process.env.PUBLIC_SITE_URL || '').replace(/\/$/, '')
   const webhookUrl = `${base}/.netlify/functions/webhooks-bolna`
 
   // Detect table shape
-  const cols = await sql/*sql*/`
+  const cols = await sql`
     select column_name from information_schema.columns
     where table_schema = current_schema() and table_name = 'calls'
   `
-  const hasPhone           = cols.some(r => r.column_name === 'phone')
-  const hasCustomerNumber  = cols.some(r => r.column_name === 'customer_number')
-  const hasStartedAt       = cols.some(r => r.column_name === 'started_at')
-  const hasDurationSec     = cols.some(r => r.column_name === 'duration_sec')
-  const hasDirection       = cols.some(r => r.column_name === 'direction')
-  const hasStatus          = cols.some(r => r.column_name === 'status')
-  const hasDisposition     = cols.some(r => r.column_name === 'disposition')
-  const hasProviderAgentId = cols.some(r => r.column_name === 'provider_agent_id')
+  const has = (c) => cols.some(r => r.column_name === c)
+  const hasPhone = has('phone')
+  const hasCustomer = has('customer_number')
+  const hasStartedAt = has('started_at')
+  const hasDurationSec = has('duration_sec')
+  const hasDirection = has('direction')
+  const hasStatus = has('status')
+  const hasDisposition = has('disposition')
+  const hasProvAgent = has('provider_agent_id')
+  const hasProvCall = has('provider_call_id')
+  const hasSummary = has('summary')
 
   const created = []
   const provider = []
 
   for (const num of numbers) {
-    const id = randomUUID() // ensure NOT NULL id even if DB has no default
+    const id = randomUUID()
 
-    let row
+    // Insert a local “queued” row (match your schema if possible)
     if (hasPhone) {
-      // Your current schema variant
-      row = (await sql/*sql*/`
+      await sql`
         insert into calls (
           id, tenant_id, agent_id,
           ${hasPhone ? sql`phone,` : sql``}
-          ${hasProviderAgentId ? sql`provider_agent_id,` : sql``}
+          ${hasProvAgent ? sql`provider_agent_id,` : sql``}
           ${hasDirection ? sql`direction,` : sql``}
           ${hasStatus ? sql`status,` : sql``}
           ${hasDisposition ? sql`disposition,` : sql``}
           ${hasStartedAt ? sql`started_at,` : sql``}
           ${hasDurationSec ? sql`duration_sec,` : sql``}
-          provider_call_id
+          ${hasProvCall ? sql`provider_call_id,` : sql``}
+          ${hasSummary ? sql`summary,` : sql``}
+          recording_url
         ) values (
           ${id}, ${tenantId}, ${agentProviderId},
           ${hasPhone ? sql`${num},` : sql``}
-          ${hasProviderAgentId ? sql`${agentProviderId},` : sql``}
+          ${hasProvAgent ? sql`${agentProviderId},` : sql``}
           ${hasDirection ? sql`'outbound',` : sql``}
           ${hasStatus ? sql`'queued',` : sql``}
           ${hasDisposition ? sql`'queued',` : sql``}
           ${hasStartedAt ? sql`now(),` : sql``}
           ${hasDurationSec ? sql`0,` : sql``}
+          ${hasProvCall ? sql`null,` : sql``}
+          ${hasSummary ? sql`null,` : sql``}
           null
         )
-        returning id
-      `)[0]
-    } else if (hasCustomerNumber) {
-      // Original schema variant
-      row = (await sql/*sql*/`
-        insert into calls (
-          id, tenant_id, agent_id, customer_number, success, duration_seconds, created_at
-        ) values (
-          ${id}, ${tenantId}, ${agentProviderId}, ${num}, false, 0, now()
-        )
-        returning id
-      `)[0]
+      `
+    } else if (hasCustomer) {
+      await sql`
+        insert into calls (id, tenant_id, agent_id, customer_number, success, duration_seconds, created_at)
+        values (${id}, ${tenantId}, ${agentProviderId}, ${num}, false, 0, now())
+      `
     } else {
       return json(500, { error: 'calls table missing phone/customer_number column' })
     }
 
-    created.push(row?.id || id)
+    // Call provider (and keep the raw result)
+    const prov = await startProviderCall(num, agentProviderId, fromNumber || undefined, webhookUrl)
 
-    // Fire provider call (best effort)
-    const prov = await startProviderCall(num, agentProviderId, fromNumber, webhookUrl)
-    provider.push({ phone: num, ...prov })
+    // Persist provider id / error state
+    if (hasProvCall || hasStatus || hasSummary) {
+      await sql`
+        update calls
+        set
+          ${hasProvCall ? sql`provider_call_id = ${prov.providerId || null},` : sql``}
+          ${hasStatus ? sql`status = ${prov.ok ? 'initiated' : 'error'},` : sql``}
+          ${hasSummary ? sql`summary = ${prov.ok ? null : JSON.stringify(prov.body).slice(0, 1000)},` : sql``}
+          started_at = coalesce(started_at, now())
+        where id = ${id}
+      `
+    }
+
+    created.push(id)
+    provider.push({ phone: num, ok: prov.ok, status: prov.status, id: prov.providerId, body: prov.body })
   }
 
   return json(200, { ok: true, created_count: created.length, created, provider })
